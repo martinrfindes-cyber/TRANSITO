@@ -1,0 +1,10 @@
+# Defensor Vial MX — Fase 1 (MVP)
+#
+# El núcleo (RAG BM25, cliente de Telegram y cliente de OpenAI) funciona SOLO
+# con la librería estándar de Python, para máxima estabilidad en Python 3.14.
+#
+# Única dependencia (opcional pero recomendada): carga de variables desde .env
+python-dotenv>=1.0.0
+
+# Para ejecutar las pruebas:
+#   pip install pytest

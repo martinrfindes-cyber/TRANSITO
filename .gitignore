@@ -1,0 +1,33 @@
+# Entorno
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Obsidian (la carpeta knowledge es compatible con Obsidian)
+knowledge/.obsidian/
+
+# Archivos intermedios de extracción de PDF
+/build/
+
+# Bóveda de evidencia de usuarios (Fase 3): datos privados, nunca versionar
+/evidence/
+
+# Configuración local del editor / Claude Code (rutas locales, no aporta al repo)
+.claude/
+
+# Archivos ajenos a este proyecto
+crm.html
