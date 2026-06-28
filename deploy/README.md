@@ -56,6 +56,12 @@ bash deploy/install.sh
 systemctl restart defensor-vial
 ```
 
+## Auto-deploy (Easypanel + GitHub)
+
+El servicio en Easypanel tiene configurado un **webhook de despliegue** conectado
+a este repo de GitHub (Settings -> Webhooks). Cada `git push` a `main` dispara
+un redeploy automático en el VPS; no hay que tocar el panel.
+
 ## Importante
 
 - **No corras el bot en dos lugares a la vez** (local + VPS). Telegram solo
