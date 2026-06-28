@@ -1,0 +1,16 @@
+# No incluir en la imagen Docker.
+.git
+.gitignore
+.gitattributes
+__pycache__/
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.env
+evidence/
+tests/
+*.png
+crm.html
+docs/
