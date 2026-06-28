@@ -1,0 +1,4 @@
+# Los scripts y unidades que corren en Linux deben conservar saltos de línea LF,
+# aunque se editen en Windows (autocrlf=true).
+*.sh        text eol=lf
+*.service   text eol=lf
