@@ -235,8 +235,9 @@ def format_report(report: BoletaReport, estado: str | None = None) -> str:
     if report.faltantes:
         L.append(
             "La boleta *no muestra claramente* estos elementos que un acta de "
-            "infracción suele requerir. Su ausencia _podría_ ser motivo para "
-            "impugnarla (verifícalo con la autoridad o un abogado):"
+            "infracción suele requerir. Su ausencia _podría_ servirte para "
+            "reclamarla y pedir que la cancelen (verifícalo con la autoridad o "
+            "un abogado):"
         )
         for f in report.faltantes:
             L.append(f"  ⚠️ {f}")
@@ -262,6 +263,40 @@ def format_report(report: BoletaReport, estado: str | None = None) -> str:
                 "documental de CDMX/EDOMEX. No significa que no existan, pero "
                 "conviene confirmarlos."
             )
+
+    # Conclusión práctica (determinista según lo detectado): si está bien hecha
+    # o no, y qué conviene hacer después en cada caso (pagar / no pagar / reclamar).
+    L.append("\n*En resumen — ¿qué hacer?*")
+    if report.faltantes:
+        L.append(
+            "La boleta *podría estar mal hecha*: le faltan datos que suele "
+            "requerir. Te conviene:"
+        )
+        L.append(
+            "  • *No la pagues de inmediato.* Si la pagas, normalmente se "
+            "entiende que aceptas la multa y ya no podrás reclamar."
+        )
+        L.append(
+            "  • Guarda la boleta y tus fotos (ya las registré como evidencia)."
+        )
+        L.append(
+            "  • Ve a *reclamar o pedir que la cancelen* dentro del plazo que "
+            "indique la boleta, o apóyate en un abogado."
+        )
+    else:
+        L.append(
+            "La boleta *parece estar bien hecha* en sus datos básicos. Tienes "
+            "dos caminos:"
+        )
+        L.append(
+            "  • *Si reconoces la falta:* puedes pagarla. En muchos casos hay "
+            "descuento por pronto pago — revisa el monto y la fecha límite en la "
+            "propia boleta."
+        )
+        L.append(
+            "  • *Si NO estás de acuerdo:* puedes reclamar dentro del plazo, "
+            "*antes* de pagar (pagar suele tomarse como que aceptas la multa)."
+        )
 
     L.append(
         "\n⚠️ Análisis informativo automático sobre lo visible en la foto; "
