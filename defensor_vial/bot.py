@@ -38,6 +38,7 @@ from .evidence import (
     EvidenceVault,
 )
 from .llm.base import LLMError
+from .subscriptions import SubscriptionStore
 
 log = logging.getLogger("defensor_vial.bot")
 
@@ -75,7 +76,8 @@ HELP = (
     "/analizar — revisa la foto de tu boleta/multa (datos, requisitos, artículos)\n"
     "/acta — genera tu acta de hechos con la evidencia\n"
     "/evidencias — lista lo que has guardado\n"
-    "/borrar — elimina toda tu evidencia"
+    "/borrar — elimina toda tu evidencia\n"
+    "/miid — muestra tu número de cliente"
 )
 
 
@@ -87,10 +89,12 @@ class TelegramBot:
         config: Config,
         assistant: Assistant,
         vault: EvidenceVault | None = None,
+        subs: SubscriptionStore | None = None,
     ):
         self.config = config
         self.assistant = assistant
         self.vault = vault or EvidenceVault(config.evidence_dir)
+        self.subs = subs or SubscriptionStore(config.subscriptions_db)
         self.token = config.telegram_bot_token
         self.api = f"https://api.telegram.org/bot{self.token}"
         self.file_api = f"https://api.telegram.org/file/bot{self.token}"
@@ -198,7 +202,49 @@ class TelegramBot:
         user_id = str(message["from"]["id"])
         text = (message.get("text") or "").strip()
 
-        # 1. Evidencia adjunta (foto, video, audio, documento, ubicación).
+        # Registro: deja el user_id (y nombre) en los logs para dar de alta clientes.
+        log.info(
+            "Mensaje de user_id=%s (%s): %s",
+            user_id,
+            _display_name(message.get("from", {})),
+            (text[:60] + "…") if len(text) > 60 else (text or "<adjunto>"),
+        )
+
+        is_admin = user_id in self.config.admin_ids
+
+        # 1. Comandos SIEMPRE permitidos (no requieren suscripción).
+        if text.startswith("/start"):
+            self.send_message(chat_id, WELCOME)
+            return
+        if text.startswith("/help"):
+            self.send_message(chat_id, HELP)
+            return
+        if text.startswith("/miid"):
+            self._handle_miid(chat_id, user_id, message)
+            return
+
+        # 2. Comandos de administrador (solo IDs en ADMIN_IDS).
+        if is_admin:
+            if text.startswith("/activar"):
+                self._handle_activar(chat_id, text)
+                return
+            if text.startswith("/baja"):
+                self._handle_baja(chat_id, text)
+                return
+            if text.startswith("/clientes"):
+                self._handle_clientes(chat_id)
+                return
+
+        # 3. Control de acceso: si está activado, bloquea a quien no haya pagado.
+        if (
+            self.config.require_subscription
+            and not is_admin
+            and not self.subs.is_active(user_id)
+        ):
+            self._send_gated(chat_id, user_id)
+            return
+
+        # 4. Evidencia adjunta (foto, video, audio, documento, ubicación).
         if self._has_evidence(message):
             self._handle_evidence(chat_id, user_id, message)
             return
@@ -210,14 +256,6 @@ class TelegramBot:
                 "consultar, o una foto/video/audio/ubicación para guardarlo "
                 "como evidencia.",
             )
-            return
-
-        # 2. Comandos.
-        if text.startswith("/start"):
-            self.send_message(chat_id, WELCOME)
-            return
-        if text.startswith("/help"):
-            self.send_message(chat_id, HELP)
             return
         if text.startswith("/reset"):
             self.assistant.reset(user_id)
@@ -394,6 +432,91 @@ class TelegramBot:
                 "foto más nítida.",
             )
 
+    # --- Suscripciones / control de acceso ---
+
+    def _handle_miid(self, chat_id: int, user_id: str, message: dict) -> None:
+        """Le muestra a cualquier persona su número de cliente (user_id)."""
+        nombre = _display_name(message.get("from", {}))
+        lineas = [
+            f"🪪 Hola {nombre}.",
+            f"Tu *número de cliente* es: `{user_id}`",
+        ]
+        sub = self.subs.get(user_id)
+        if sub and self.subs.is_active(user_id):
+            lineas.append(f"\n✅ Membresía *activa* hasta el {sub.expires_human()}.")
+        else:
+            lineas.append(
+                "\nℹ️ Comparte ese número con quien te dio el bot para activar "
+                "tu membresía."
+            )
+        self.send_message(chat_id, "\n".join(lineas))
+
+    def _send_gated(self, chat_id: int, user_id: str) -> None:
+        """Mensaje para quien no tiene membresía activa."""
+        self.send_message(
+            chat_id,
+            "🔒 *Defensor Vial MX es un servicio por suscripción.*\n\n"
+            f"Tu número de cliente es: `{user_id}`\n\n"
+            "Envía ese número a quien te compartió el bot para activar tu "
+            "membresía. Una vez activado, podrás hacer consultas, analizar tu "
+            "boleta y generar tu acta de hechos.",
+        )
+
+    def _handle_activar(self, chat_id: int, text: str) -> None:
+        """/activar <user_id> [días] [nombre…] — alta o renovación de un cliente."""
+        partes = text.split()
+        if len(partes) < 2 or not partes[1].isdigit():
+            self.send_message(
+                chat_id,
+                "Uso: `/activar <user_id> [días] [nombre]`\n"
+                f"Ej.: `/activar 123456789 30 Juan Pérez`\n"
+                f"(si omites los días, se usan {self.config.subscription_days}).",
+            )
+            return
+        target = partes[1]
+        resto = partes[2:]
+        days = self.config.subscription_days
+        if resto and resto[0].isdigit():
+            days = int(resto[0])
+            resto = resto[1:]
+        nombre = " ".join(resto) or None
+        sub = self.subs.activate(target, days=days, name=nombre)
+        etiqueta = f" ({sub.name})" if sub.name else ""
+        self.send_message(
+            chat_id,
+            f"✅ Cliente `{target}`{etiqueta} activado por {days} días.\n"
+            f"Vence el *{sub.expires_human()}*.",
+        )
+
+    def _handle_baja(self, chat_id: int, text: str) -> None:
+        """/baja <user_id> — elimina a un cliente del padrón."""
+        partes = text.split()
+        if len(partes) < 2 or not partes[1].isdigit():
+            self.send_message(chat_id, "Uso: `/baja <user_id>`")
+            return
+        target = partes[1]
+        if self.subs.deactivate(target):
+            self.send_message(chat_id, f"🗑️ Cliente `{target}` dado de baja.")
+        else:
+            self.send_message(chat_id, f"No encontré al cliente `{target}` en el padrón.")
+
+    def _handle_clientes(self, chat_id: int) -> None:
+        """/clientes — lista el padrón con su estado y vencimiento."""
+        subs = self.subs.all()
+        if not subs:
+            self.send_message(
+                chat_id,
+                "📋 El padrón está vacío. Usa `/activar <user_id>` para dar de "
+                "alta a tu primer cliente.",
+            )
+            return
+        lineas = [f"📋 *Padrón de clientes* ({len(subs)}):\n"]
+        for s in subs:
+            estado = "✅" if self.subs.is_active(s.user_id) else "⛔"
+            nombre = f" — {s.name}" if s.name else ""
+            lineas.append(f"{estado} `{s.user_id}`{nombre} (vence {s.expires_human()})")
+        self.send_message(chat_id, "\n".join(lineas))
+
     def run(self) -> None:
         """Inicia el bucle de long polling (bloqueante)."""
         me = self.get_me()
@@ -414,6 +537,19 @@ class TelegramBot:
             except Exception:  # pragma: no cover
                 log.exception("Error en el bucle principal; continuando.")
                 time.sleep(3)
+
+
+def _display_name(from_user: dict) -> str:
+    """Nombre legible de un remitente de Telegram para logs y mensajes."""
+    nombre = " ".join(
+        p for p in (from_user.get("first_name"), from_user.get("last_name")) if p
+    ).strip()
+    username = from_user.get("username")
+    if nombre and username:
+        return f"{nombre} (@{username})"
+    if username:
+        return f"@{username}"
+    return nombre or "sin nombre"
 
 
 def _split_message(text: str, limit: int = _TELEGRAM_MAX) -> list[str]:

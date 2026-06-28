@@ -51,6 +51,13 @@ def _get_float(name: str, default: float) -> float:
         return default
 
 
+def _get_ids(name: str) -> frozenset[str]:
+    """Lee una lista de IDs de Telegram separados por coma, espacio o punto y coma."""
+    raw = os.getenv(name, "")
+    partes = raw.replace(";", ",").replace(" ", ",").split(",")
+    return frozenset(p.strip() for p in partes if p.strip())
+
+
 @dataclass
 class Config:
     """Parámetros de ejecución del asistente."""
@@ -113,6 +120,32 @@ class Config:
         default_factory=lambda: _get_int("EVIDENCE_MAX_MB", 20)
     )
 
+    # --- Suscripciones (control de acceso de paga) ---
+    # IDs de Telegram con permisos de administrador (pueden activar clientes).
+    admin_ids: frozenset[str] = field(default_factory=lambda: _get_ids("ADMIN_IDS"))
+    # Si es True, solo responden los user_id activos en el padrón (y los admins).
+    # Si es False (def.), el bot atiende a todos como antes (modo abierto/demo).
+    require_subscription: bool = field(
+        default_factory=lambda: _get_bool("REQUIRE_SUBSCRIPTION", False)
+    )
+    # Días que dura una activación con /activar cuando no se indican días.
+    subscription_days: int = field(
+        default_factory=lambda: _get_int("SUBSCRIPTION_DAYS", 30)
+    )
+    # Ruta del padrón JSON. Por defecto vive dentro de evidence/ para que persista
+    # con el mismo volumen montado en producción (un solo mount basta para ambos).
+    subscriptions_db: Path | None = field(
+        default_factory=lambda: (
+            Path(os.environ["SUBSCRIPTIONS_DB"]).expanduser()
+            if os.getenv("SUBSCRIPTIONS_DB", "").strip()
+            else None
+        )
+    )
+
+    def __post_init__(self) -> None:
+        if self.subscriptions_db is None:
+            self.subscriptions_db = self.evidence_dir / "_subscriptions.json"
+
     def validate_for_bot(self) -> list[str]:
         """Devuelve la lista de problemas que impedirían arrancar el bot."""
         problems: list[str] = []
@@ -122,6 +155,12 @@ class Config:
         if not self.knowledge_dir.exists():
             problems.append(
                 f"No existe la carpeta de conocimiento: {self.knowledge_dir}"
+            )
+        if self.require_subscription and not self.admin_ids:
+            problems.append(
+                "REQUIRE_SUBSCRIPTION está activo pero ADMIN_IDS está vacío: "
+                "nadie podría activar clientes y el servicio quedaría bloqueado. "
+                "Define ADMIN_IDS con tu user_id de Telegram."
             )
         return problems
 

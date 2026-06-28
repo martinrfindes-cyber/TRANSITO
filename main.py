@@ -81,6 +81,15 @@ def cmd_check(config) -> int:
     print("\nBóveda de evidencia (Fase 3):")
     print(f"   Carpeta: {config.evidence_dir}")
     print(f"   Tamaño máximo por archivo: {config.evidence_max_mb} MB")
+
+    print("\nSuscripciones (control de acceso):")
+    modo = "DE PAGA (solo clientes activos)" if config.require_subscription else "ABIERTO (todos)"
+    print(f"   Modo: {modo}")
+    print(f"   Administradores (ADMIN_IDS): {sorted(config.admin_ids) or '—'}")
+    print(f"   Duración por defecto: {config.subscription_days} días")
+    print(f"   Padrón: {config.subscriptions_db}")
+    if config.require_subscription and not config.admin_ids:
+        print("   ⚠️  REQUIRE_SUBSCRIPTION activo sin ADMIN_IDS: nadie podría activar clientes.")
     return 0
 
 
